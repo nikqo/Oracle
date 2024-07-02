@@ -25,15 +25,11 @@ impl EventHandler for Handler {
             let user = user_ref.value();
             let db_user: DbUser = user.into();
 
-            let result = database::queries::insert_user(&self.pool, &db_user).await;
-            match result {
-                Ok(_) => println!("Inserted user {} into database", user.name),
-                Err(e) => eprintln!("Error inserting user {} into database: {:?}", user.name, e),
+            let result = database::queries::create_user(&self.pool, &db_user).await;
+            if let Err(e) = result {
+                eprintln!("Error creating user: {:?}", e);
             }
         }
-
-        
-
     }
 }
 
@@ -46,7 +42,6 @@ async fn main() {
         .expect("Expected a token in the environment");
     let intents = GatewayIntents::all();
     let pool = database::connection::establish_connection().await.expect("Error connecting to database");
-
     let mut client = Client::builder(token, intents)
         .event_handler(Handler{pool: pool})
         .await

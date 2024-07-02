@@ -5,8 +5,6 @@ CREATE TABLE users (
     discriminator INT,
     global_name VARCHAR(255),
     avatar VARCHAR(255),
-    bot BOOLEAN,
-    banner VARCHAR(255),
-    accent_colour BIGINT
+    bot BOOLEAN
 )
 
