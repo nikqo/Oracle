@@ -5,6 +5,6 @@ CREATE TABLE users (
     discriminator INT,
     global_name VARCHAR(255),
     avatar VARCHAR(255),
-    bot BOOLEAN
+    bot BOOLEAN NOT NULL DEFAULT FALSE
 )
 
