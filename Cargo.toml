@@ -3,25 +3,37 @@ name = "oracle"
 version = "0.1.0"
 edition = "2021"
 
+# Main dependencies
 [dependencies]
 tokio = { version = "1.38.0", features = ["full"] }
-sqlx = { version = "0.7.4", features = ["runtime-tokio-rustls", "macros", "postgres", "time", "chrono"] }
-serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.120"
-async-trait = "0.1.80"
-chrono = "0.4.38"
-dotenv = "0.15.0"
+sqlx = { version = "0.7.4", features = ["runtime-tokio-rustls", "macros", "postgres", "time", "chrono"] } 
 
+# Serialization and Deserialization
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.120" 
+
+# Utilities
+async-trait = "0.1.80"
+chrono = "0.4.38" 
+
+# Environment configuration
+dotenv = "0.15.0" 
+
+# Logging
+fern = "0.6.2"
+log = "0.4.22"
+
+# Discord bot framework
 [dependencies.serenity]
 version = "0.12.2"
 default-features = false
 features = [
     "builder",
     "cache",
-    "chrono", 
+    "chrono",
     "client",
     "gateway",
-    "model", 
+    "model",
     "http",
     "utils",
     "rustls_backend"

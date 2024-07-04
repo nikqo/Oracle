@@ -1,408 +1,203 @@
-use sqlx::postgres::PgPool;
-use super::model::{DbUser, DbGuild, DbGuildChannel, DbMessage, DbRole};
-use async_trait::async_trait;
+use sqlx::{PgPool, Error};
 
-// Crud Operations for users in model.rs
-
-#[async_trait]
-pub trait CrudOperation<T> {
-    async fn create(pool: &PgPool, item: &T) -> Result<T, sqlx::Error>;
-    async fn read(pool: &PgPool, id: i64) -> Result<T, sqlx::Error>;
-    async fn update(pool: &PgPool, item: &T) -> Result<T, sqlx::Error>;
-    async fn delete(pool: &PgPool, id: i64) -> Result<T, sqlx::Error>;
+use crate::database::model::{DbUser, DbGuild};
+use log::{info, error};
+trait _CrudOperations {
+    async fn create(&self, pool: &PgPool) -> Result<(), Error>;
+    async fn read(&self, pool: &PgPool) -> Result<Option<Self>, Error> where Self: Sized;
+    async fn update(&self, pool: &PgPool) -> Result<(), Error>;
+    async fn delete(&self, pool: &PgPool) -> Result<(), Error>;
 }
 
-// DbUser implementation for CrudOperation
-#[async_trait]
-impl CrudOperation<DbUser> for DbUser {
-    async fn create(pool: &PgPool, user: &DbUser) -> Result<DbUser, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbUser,
+impl _CrudOperations for DbUser {
+    async fn create(&self, pool: &PgPool) -> Result<(), sqlx::Error> {
+        match sqlx::query!(
             r#"
-            INSERT INTO users (id, name, discriminator, global_name, avatar, bot)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id, name, discriminator, global_name, avatar, bot
+            INSERT INTO users (id, name, discriminator, global_name, avatar, bot, system, mfa_enabled, locale, flags, premium_type, public_flags)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             "#,
-            user.id.into(),
-            user.name,
-            user.discriminator,
-            user.global_name,
-            user.avatar,
-            user.bot,
+            self.id,
+            self.name,
+            self.discriminator,
+            self.global_name,
+            self.avatar,
+            self.bot,
+            self.system,
+            self.mfa_enabled,
+            self.locale,
+            self.flags,
+            self.premium_type,
+            self.public_flags
         )
-        .fetch_one(pool)
-        .await?;
+        .execute(pool)
+        .await {
+            Ok(_) => info!("User {} inserted into the database", self.name),
+            Err(e) => error!("Error inserting user {} into the database: {}", self.name, e),
+        }
 
-        Ok(row)
+        Ok(())
     }
 
-    async fn read(pool: &PgPool, id: i64) -> Result<DbUser, sqlx::Error> {
-        let row = sqlx::query_as!(
+    async fn read(&self, pool: &PgPool) -> Result<Option<Self>, sqlx::Error> {
+        match sqlx::query_as!(
             DbUser,
             r#"
-            SELECT id, name, discriminator, global_name, avatar, bot
-            FROM users
-            WHERE id = $1
+            SELECT * FROM users WHERE id = $1
             "#,
-            id
+            self.id
         )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(row)
+        .fetch_optional(pool)
+        .await {
+            Ok(user) => Ok(user),
+            Err(e) => {
+                error!("Error reading user {} from the database: {}", self.id, e);
+                Ok(None)
+            }
+        }
     }
 
-    async fn update(pool: &PgPool, user: &DbUser) -> Result<DbUser, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbUser,
+    async fn update(&self, pool: &PgPool) -> Result<(), sqlx::Error> {
+        match sqlx::query!(
             r#"
             UPDATE users
-            SET name = $2, discriminator = $3, global_name = $4, avatar = $5, bot = $6
+            SET name = $2, discriminator = $3, global_name = $4, avatar = $5, bot = $6, system = $7, mfa_enabled = $8, locale = $9, flags = $10, premium_type = $11, public_flags = $12
             WHERE id = $1
-            RETURNING id, name, discriminator, global_name, avatar, bot
             "#,
-            user.id.into(),
-            user.name,
-            user.discriminator,
-            user.global_name,
-            user.avatar,
-            user.bot,
+            self.id,
+            self.name,
+            self.discriminator,
+            self.global_name,
+            self.avatar,
+            self.bot,
+            self.system,
+            self.mfa_enabled,
+            self.locale,
+            self.flags,
+            self.premium_type,
+            self.public_flags
         )
-        .fetch_one(pool)
-        .await?;
+        .execute(pool)
+        .await {
+            Ok(_) => info!("User {} updated in the database", self.name),
+            Err(e) => error!("Error updating user {} in the database: {}", self.name, e),
+        }
 
-        Ok(row)
+        Ok(())
     }
 
-    async fn delete(pool: &PgPool, id: i64) -> Result<DbUser, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbUser,
+    async fn delete(&self, pool: &PgPool) -> Result<(), sqlx::Error> {
+        match sqlx::query!(
             r#"
-            DELETE FROM users
-            WHERE id = $1
-            RETURNING id, name, discriminator, global_name, avatar, bot
+            DELETE FROM users WHERE id = $1
             "#,
-            id
+            self.id
         )
-        .fetch_one(pool)
-        .await?;
+        .execute(pool)
+        .await {
+            Ok(_) => info!("User {} deleted from the database", self.name),
+            Err(e) => error!("Error deleting user {} from the database: {}", self.name, e),
+        }
 
-        Ok(row)
+        Ok(())
     }
 }
 
-// DbGuild implementation for CrudOperation
-#[async_trait]
-impl CrudOperation<DbGuild> for DbGuild {
-    async fn create(pool: &PgPool, guild: &DbGuild) -> Result<DbGuild, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbGuild,
-            r#"
-            INSERT INTO guilds (id, name, icon, icon_hash, splash, owner_id)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id, name, icon, icon_hash, splash, owner_id
-            "#,
-            guild.id.into(),
-            guild.name,
-            guild.icon,
-            guild.icon_hash,
-            guild.splash,
-            guild.owner_id.into()
-        )
-        .fetch_one(pool)
-        .await?;
 
-        Ok(row)
+impl _CrudOperations for DbGuild {
+    async fn create(&self, pool: &PgPool) -> Result<(), sqlx::Error> {
+        match sqlx::query!(
+            r#"
+            INSERT INTO guilds (id, name, icon, icon_hash, splash, discovery_splash, owner_id, afk_metadata, widget_enabled, widget_channel_id, verification_level, default_message_notifications, explicit_content_filter, roles, emojis)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            "#,
+            self.id,
+            self.name,
+            self.icon,
+            self.icon_hash,
+            self.splash,
+            self.discovery_splash,
+            self.owner_id,
+            self.afk_metadata,
+            self.widget_enabled,
+            self.widget_channel_id,
+            self.verification_level,
+            self.default_message_notifications,
+            self.explicit_content_filter,
+            self.roles,
+            self.emojis
+        )
+        .execute(pool)
+        .await {
+            Ok(_) => info!("Guild {} inserted into the database", self.name),
+            Err(e) => error!("Error inserting guild {} into the database: {}", self.name, e),
+        }
+
+        Ok(())
     }
 
-    async fn read(pool: &PgPool, id: i64) -> Result<DbGuild, sqlx::Error> {
-        let row = sqlx::query_as!(
+    async fn read(&self, pool: &PgPool) -> Result<Option<Self>, sqlx::Error> {
+        match sqlx::query_as!(
             DbGuild,
             r#"
-            SELECT id, name, icon, icon_hash, splash, owner_id
-            FROM guilds
-            WHERE id = $1
+            SELECT * FROM guilds WHERE id = $1
             "#,
-            id
+            self.id
         )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(row)
+        .fetch_optional(pool)
+        .await {
+            Ok(guild) => Ok(guild),
+            Err(e) => {
+                error!("Error reading guild {} from the database: {}", self.id, e);
+                Ok(None)
+            }
+        }
     }
 
-    async fn update(pool: &PgPool, guild: &DbGuild) -> Result<DbGuild, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbGuild,
+    async fn update(&self, pool: &PgPool) -> Result<(), sqlx::Error> {
+        match sqlx::query!(
             r#"
             UPDATE guilds
-            SET name = $2, icon = $3, icon_hash = $4, splash = $5, owner_id = $6
-            WHERE id = $1
-            RETURNING id, name, icon, icon_hash, splash, owner_id
-            "#,
-            guild.id.into(),
-            guild.name,
-            guild.icon,
-            guild.icon_hash,
-            guild.splash,
-            guild.owner_id.into()
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(row)
-    }
-
-    async fn delete(pool: &PgPool, id: i64) -> Result<DbGuild, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbGuild,
-            r#"
-            DELETE FROM guilds
-            WHERE id = $1
-            RETURNING id, name, icon, icon_hash, splash, owner_id
-            "#,
-            id
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(row)
-    }
-}
-
-// DbGuildChannel implementation for CrudOperation
-#[async_trait]
-impl CrudOperation<DbGuildChannel> for DbGuildChannel {
-    async fn create(pool: &PgPool, channel: &DbGuildChannel) -> Result<DbGuildChannel, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbGuildChannel,
-            r#"
-            INSERT INTO channels (id, guild_id, name, position, nsfw)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, guild_id, name, position, nsfw
-            "#,
-            channel.id.into(),
-            channel.guild_id.into(),
-            channel.name,
-            channel.position,
-            channel.nsfw
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(row)
-    }
-
-    async fn read(pool: &PgPool, id: i64) -> Result<DbGuildChannel, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbGuildChannel,
-            r#"
-            SELECT id, guild_id, name, position, nsfw
-            FROM channels
+            SET name = $2, icon = $3, icon_hash = $4, splash = $5, discovery_splash = $6, owner_id = $7, afk_metadata = $8, widget_enabled = $9, widget_channel_id = $10, verification_level = $11, default_message_notifications = $12, explicit_content_filter = $13, roles = $14, emojis = $15
             WHERE id = $1
             "#,
-            id
+            self.id,
+            self.name,
+            self.icon,
+            self.icon_hash,
+            self.splash,
+            self.discovery_splash,
+            self.owner_id,
+            self.afk_metadata,
+            self.widget_enabled,
+            self.widget_channel_id,
+            self.verification_level,
+            self.default_message_notifications,
+            self.explicit_content_filter,
+            self.roles,
+            self.emojis
         )
-        .fetch_one(pool)
-        .await?;
+        .execute(pool)
+        .await {
+            Ok(_) => info!("Guild {} updated in the database", self.name),
+            Err(e) => error!("Error updating guild {} in the database: {}", self.name, e),
+        }
 
-        Ok(row)
+        Ok(())
     }
 
-    async fn update(pool: &PgPool, channel: &DbGuildChannel) -> Result<DbGuildChannel, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbGuildChannel,
+    async fn delete(&self, pool: &PgPool) -> Result<(), sqlx::Error> {
+        match sqlx::query!(
             r#"
-            UPDATE channels
-            SET guild_id = $2, name = $3, position = $4, nsfw = $5
-            WHERE id = $1
-            RETURNING id, guild_id, name, position, nsfw
+            DELETE FROM guilds WHERE id = $1
             "#,
-            channel.id.into(),
-            channel.guild_id.into(),
-            channel.name,
-            channel.position,
-            channel.nsfw
+            self.id
         )
-        .fetch_one(pool)
-        .await?;
+        .execute(pool)
+        .await {
+            Ok(_) => info!("Guild {} deleted from the database", self.name),
+            Err(e) => error!("Error deleting guild {} from the database: {}", self.name, e),
+        }
 
-        Ok(row)
+        Ok(())
     }
-
-    async fn delete(pool: &PgPool, id: i64) -> Result<DbGuildChannel, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbGuildChannel,
-            r#"
-            DELETE FROM channels
-            WHERE id = $1
-            RETURNING id, guild_id, name, position, nsfw
-            "#,
-            id
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(row)
-    }
-}
-
-// DbMessage implementation for CrudOperation
-#[async_trait]
-impl CrudOperation<DbMessage> for DbMessage {
-    async fn create(pool: &PgPool, message: &DbMessage) -> Result<DbMessage, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbMessage,
-            r#"
-            INSERT INTO messages (id, channel_id, author, content, timestamp, pinned, guild_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, channel_id, author, content, timestamp, pinned, guild_id
-            "#,
-            message.id.into(),
-            message.channel_id.into(),
-            message.author.into(),
-            message.content,
-            message.timestamp,
-            message.pinned,
-            message.guild_id.into()
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(row)
-    }
-
-    async fn read(pool: &PgPool, id: i64) -> Result<DbMessage, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbMessage,
-            r#"
-            SELECT id, channel_id, author, content, timestamp, pinned, guild_id
-            FROM messages
-            WHERE id = $1
-            "#,
-            id
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(row)
-    }
-
-    async fn update(pool: &PgPool, message: &DbMessage) -> Result<DbMessage, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbMessage,
-            r#"
-            UPDATE messages
-            SET channel_id = $2, author = $3, content = $4, timestamp = $5, pinned = $6, guild_id = $7
-            WHERE id = $1
-            RETURNING id, channel_id, author, content, timestamp, pinned, guild_id
-            "#,
-            message.id.into(),
-            message.channel_id.into(),
-            message.author.into(),
-            message.content,
-            message.timestamp,
-            message.pinned,
-            message.guild_id.into()
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(row)
-    }
-
-    async fn delete(pool: &PgPool, id: i64) -> Result<DbMessage, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbMessage,
-            r#"
-            DELETE FROM messages
-            WHERE id = $1
-            RETURNING id, channel_id, author, content, timestamp, pinned, guild_id
-            "#,
-            id
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(row)
-    }
-}
-
-// DbRole implementation for CrudOperation
-#[async_trait]
-impl CrudOperation<DbRole> for DbRole {
-    async fn create(pool: &PgPool, role: &DbRole) -> Result<DbRole, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbRole,
-            r#"
-            INSERT INTO roles (id, guild_id, mentionable, name, position)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, guild_id, mentionable, name, position
-            "#,
-            role.id.into(),
-            role.guild_id.into(),
-            role.mentionable,
-            role.name,
-            role.position
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(row)
-    }
-
-    async fn read(pool: &PgPool, id: i64) -> Result<DbRole, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbRole,
-            r#"
-            SELECT id, guild_id, mentionable, name, position
-            FROM roles
-            WHERE id = $1
-            "#,
-            id
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(row)
-    }
-
-    async fn update(pool: &PgPool, role: &DbRole) -> Result<DbRole, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbRole,
-            r#"
-            UPDATE roles
-            SET guild_id = $2, mentionable = $3, name = $4, position = $5
-            WHERE id = $1
-            RETURNING id, guild_id, mentionable, name, position
-            "#,
-            role.id.into(),
-            role.guild_id.into(),
-            role.mentionable,
-            role.name,
-            role.position
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(row)
-    }
-
-    async fn delete(pool: &PgPool, id: i64) -> Result<DbRole, sqlx::Error> {
-        let row = sqlx::query_as!(
-            DbRole,
-            r#"
-            DELETE FROM roles
-            WHERE id = $1
-            RETURNING id, guild_id, mentionable, name, position
-            "#,
-            id
-        )
-        .fetch_one(pool)
-        .await?;
-
-        Ok(row)
-    }
-
-
 }

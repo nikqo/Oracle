@@ -1,46 +1,44 @@
+// External Imports //
 use serenity::prelude::*;
-use serenity::async_trait;
-use serenity::model::gateway::Ready;
+use std::env;
 
-// use database::model::DbUser;
+use log::LevelFilter;
 
+// Internal Modules & Imports //
 pub mod database;
+pub mod event_handler;
+pub mod logger;
 
-struct Handler {
-    pool: sqlx::Pool<sqlx::Postgres>,
-}
-
-
-#[async_trait]
-impl EventHandler for Handler {
-    async fn ready(&self, _ctx: Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
-
-        // Check if the database connection is working
-        match sqlx::query("SELECT 1")
-            .fetch_one(&self.pool)
-            .await {
-                Ok(_) => println!("Database connection is working"),
-                Err(e) => eprintln!("Error connecting to database: {:?}", e),
-            }
-    }
-}
+use event_handler::Handler;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().ok();
 
-    let token = std::env::var("BOT_TOKEN")
-        .expect("Expected a token in the environment");
+    let mut logger = logger::Logger::new(LevelFilter::Trace);
+    if let Err(e) = logger.start() {
+        eprintln!("Error starting logger: {:?}", e);
+        return Err("Failed to start logger".into());
+    }
+
+    let token = env::var("BOT_TOKEN").map_err(|_| "BOT_TOKEN environment variable not found")?;
     let intents = GatewayIntents::all();
-    let pool = database::connection::establish_connection().await.expect("Error connecting to database");
-    let mut client = Client::builder(token, intents)
-        .event_handler(Handler { pool })
+
+    let pool = database::connection::establish_connection()
         .await
-        .expect("Err creating client");
+        .map_err(|e| format!("Error connecting to database: {:?}", e))?;
+
+    let handler = Handler { pool };
+
+    let mut client = Client::builder(token, intents)
+        .event_handler(handler)
+        .await
+        .map_err(|e| format!("Error creating client: {:?}", e))?;
 
     if let Err(why) = client.start().await {
-        println!("Client error: {:?}", why);
+        eprintln!("Client error: {:?}", why);
+        return Err("Failed to start client".into());
     }
-}   
 
+    Ok(())
+}

@@ -1,125 +1,84 @@
-use serde::{Deserialize, Serialize};
-use serenity::all::GuildChannel;
-use serenity::model::user::User;
-use serenity::model::guild::Guild;
-use serenity::model::guild::Role;
-use chrono::NaiveDateTime;
+use sqlx::FromRow;
 
+use serenity::model::{
+    user::User,
+    guild::Guild,
+};
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+use serde_json::{Value, to_string, to_value};
+
+#[derive(Debug, FromRow)]
 pub struct DbUser {
     pub id: i64,
     pub name: String,
-    pub discriminator: Option<i32>,
+    pub discriminator: Option<i16>,
     pub global_name: Option<String>,
     pub avatar: Option<String>,
     pub bot: bool,
+    pub system: bool,
+    pub mfa_enabled: bool, 
+    pub locale: Option<String>,
+    pub flags: i64,
+    pub premium_type: String,
+    pub public_flags: Option<i64>,
 }
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+impl From<User> for DbUser {
+    fn from(user: User) -> Self {
+        DbUser {
+            id: user.id.into(), 
+            name: user.name,
+            discriminator: user.discriminator.map(|d| d.get() as i16),
+            global_name: user.global_name,
+            avatar: user.avatar.map(|a| to_string(&a).unwrap_or_default()),
+            bot: user.bot,
+            system: user.system,
+            mfa_enabled: user.mfa_enabled,
+            locale: user.locale,
+            flags: user.flags.bits() as i64,
+            premium_type: to_string(&user.premium_type).unwrap_or_default(),
+            public_flags: user.public_flags.map(|flags| flags.bits() as i64),
+        }
+    }
+}
+
+#[derive(Debug, FromRow)]
 pub struct DbGuild {
     pub id: i64,
     pub name: String,
     pub icon: Option<String>,
     pub icon_hash: Option<String>,
     pub splash: Option<String>,
-    pub owner_id: i64,
+    pub discovery_splash: Option<String>,
+    pub owner_id: i64, // foreign key to users
+    pub afk_metadata: Option<Value>, // needs to be a json
+    pub widget_enabled: Option<bool>,
+    pub widget_channel_id: Option<i64>,
+    pub verification_level: Option<String>, // enum
+    pub default_message_notifications: Option<String>, // enum
+    pub explicit_content_filter: Option<String>, // enum
+    pub roles: Value, // a hashmap, roleid & role. needs to be a json
+    pub emojis: Value, // a hashmap, emojiid & emoji. needs to be a json
 }
 
-// a lot more can be added, just adding basics for now.
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
-pub struct DbGuildChannel {
-    pub id: i64,
-    pub guild_id: i64,
-    pub name: String,
-    pub position: i32,
-    pub nsfw: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
-pub struct DbMessage {
-    pub id: i64,
-    pub channel_id: i64,
-    pub author: i64,
-    pub content: String,
-    pub timestamp: NaiveDateTime,
-    pub pinned: bool,
-    pub guild_id: i64,
-}
-
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
-pub struct DbRole {
-    pub id: i64,
-    pub guild_id: i64,
-    // pub color: i64,( implement later, cba to do colors yet )
-    pub mentionable: bool,
-    pub name: String,
-    // pub permissions: idk yet, 
-    pub position: i32,
-}
-
-// Implementations from Serenity models to Database models
-
-impl From<&User> for DbUser {
-    fn from(user: &User) -> Self {
-        Self {
-            id: user.id.into(),
-            name: user.name.clone(),
-            discriminator: user.discriminator.map(|d| d.get() as i32),
-            global_name: user.global_name.clone(),
-            avatar: user.avatar.as_ref().map(|hash| hash.to_string()),
-            bot: user.bot,
-        }
-    }
-}
-
-impl From<&Guild> for DbGuild {
-    fn from(guild: &Guild) -> Self {
-        Self {
+impl From<Guild> for DbGuild {
+    fn from(guild: Guild) -> Self {
+        DbGuild {
             id: guild.id.into(),
-            name: guild.name.clone(),
-            icon: guild.icon.as_ref().map(|hash| hash.to_string()),
-            icon_hash: guild.icon_hash.as_ref().map(|hash| hash.to_string()),
-            splash: guild.splash.as_ref().map(|hash| hash.to_string()),
+            name: guild.name,
+            icon: guild.icon.map(|i| to_string(&i).unwrap_or_default()),
+            icon_hash: guild.icon_hash.map(|i| to_string(&i).unwrap_or_default()),
+            splash: guild.splash.map(|s| to_string(&s).unwrap_or_default()),
+            discovery_splash: guild.discovery_splash.map(|d| to_string(&d).unwrap_or_default()),
             owner_id: guild.owner_id.into(),
-        }
-    }
-}
-
-impl From<&GuildChannel> for DbGuildChannel {
-    fn from(channel: &GuildChannel) -> Self {
-        Self {
-            id: channel.id.into(),
-            guild_id: channel.guild_id.into(),
-            name: channel.name.clone(),
-            position: channel.position as i32,
-            nsfw: channel.nsfw,
-        }
-    }
-}
-
-impl From<&serenity::model::channel::Message> for DbMessage {
-    fn from(message: &serenity::model::channel::Message) -> Self {
-        Self {
-            id: message.id.into(),
-            channel_id: message.channel_id.into(),
-            author: message.author.id.into(),
-            content: message.content.clone(),
-            timestamp: message.timestamp.naive_utc(),
-            pinned: message.pinned,
-            guild_id: message.guild_id.unwrap().into(),
-        }
-    }
-}
-
-impl From<&Role> for DbRole {
-    fn from(role: &Role) -> Self {
-        Self {
-            id: role.id.into(),
-            guild_id: role.guild_id.into(),
-            mentionable: role.mentionable,
-            name: role.name.clone(),
-            position: role.position as i32,
+            afk_metadata: Some(to_value(&guild.afk_metadata).unwrap()),
+            widget_enabled: guild.widget_enabled,
+            widget_channel_id: guild.widget_channel_id.map(|c| c.into()),
+            verification_level: Some(to_string(&guild.verification_level).unwrap_or_default()),
+            default_message_notifications: Some(to_string(&guild.default_message_notifications).unwrap_or_default()),
+            explicit_content_filter: Some(to_string(&guild.explicit_content_filter).unwrap_or_default()),
+            roles: to_value(&guild.roles).unwrap(),
+            emojis: to_value(&guild.emojis).unwrap(),
         }
     }
 }
